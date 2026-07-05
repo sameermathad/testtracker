@@ -7,7 +7,7 @@ const RESULTS = new Set(["C", "W", "U"]);
 const SUBJECTS = new Set(["Physics", "Chemistry", "Maths"]);
 
 export async function GET() {
-  return Response.json({ tests: listTests() });
+  return Response.json({ tests: await listTests() });
 }
 
 export async function POST(req) {
@@ -36,7 +36,7 @@ export async function POST(req) {
     }
   }
 
-  const test = insertTest({
+  const test = await insertTest({
     id: crypto.randomUUID(),
     name,
     date: date || new Date().toISOString().slice(0, 10),
