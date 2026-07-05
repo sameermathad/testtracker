@@ -550,6 +550,16 @@ export default function TestTracker() {
     });
   }, [tests]);
 
+  const trend = useMemo(() => {
+    return tests.map((t, i) => {
+      const row = { name: `T${i + 1}`, full: t.name };
+      SUBJECTS.forEach((s) => {
+        row[s] = subjectStats(t.questions, s).marks;
+      });
+      return row;
+    });
+  }, [tests]);
+
   // Overall diagnostic recommendations
   const latestDiagnosis = useMemo(() => {
     if (!tests.length) return null;
