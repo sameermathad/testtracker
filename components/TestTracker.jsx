@@ -428,6 +428,11 @@ export default function TestTracker() {
   const [subjFilter, setSubjFilter] = useState(null);
   const [mapSubjFilter, setMapSubjFilter] = useState("All");
 
+  // Question review log filters
+  const [qFilterSubj, setQFilterSubj] = useState("All");
+  const [qFilterStatus, setQFilterStatus] = useState("All");
+  const [qFilterDiff, setQFilterDiff] = useState("All");
+
   // upload flow state
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1182,6 +1187,94 @@ export default function TestTracker() {
               <Label>Answer sheet</Label>
               <div className="text-xs text-slate-500 mb-4 font-medium">Green = correct, red = wrong, blank = unattempted. Hover a bubble for details.</div>
               <OMRGrid questions={current.questions} />
+            </Card>
+
+            {/* Filterable Question Review List */}
+            <Card>
+              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100 mb-4">
+                <div>
+                  <Label>Question review log</Label>
+                  <p className="text-[10px] text-slate-500 leading-snug">Review individual question details, topics, and performance indicators.</p>
+                </div>
+                <div className="flex gap-2 flex-wrap text-xs no-print">
+                  <select value={qFilterSubj} onChange={(e) => setQFilterSubj(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                    <option value="All">All Subjects</option>
+                    <option value="Physics">Physics</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Maths">Maths</option>
+                  </select>
+                  <select value={qFilterStatus} onChange={(e) => setQFilterStatus(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                    <option value="All">All Statuses</option>
+                    <option value="C">Correct (✓)</option>
+                    <option value="W">Wrong (✗)</option>
+                    <option value="U">Unattempted (Blank)</option>
+                  </select>
+                  <select value={qFilterDiff} onChange={(e) => setQFilterDiff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                    <option value="All">All Difficulties</option>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto mt-2 border border-slate-150 rounded-xl divide-y divide-slate-100">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 z-10">
+                    <tr className="font-semibold text-slate-500">
+                      <th className="py-2.5 px-4 w-12">QNo</th>
+                      <th className="py-2.5 px-4 w-20">Subject</th>
+                      <th className="py-2.5 px-4">Chapter & Subtopic</th>
+                      <th className="py-2.5 px-4 w-20">Difficulty</th>
+                      <th className="py-2.5 px-4 w-24">Status</th>
+                      <th className="py-2.5 px-4 w-16 text-right">Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white text-slate-650">
+                    {current.questions
+                      .filter((q) => {
+                        const norm = normalizeQuestion(q);
+                        if (qFilterSubj !== "All" && norm.subject !== qFilterSubj) return false;
+                        if (qFilterStatus !== "All" && norm.result !== qFilterStatus) return false;
+                        if (qFilterDiff !== "All" && norm.difficulty !== qFilterDiff) return false;
+                        return true;
+                      })
+                      .map((q) => {
+                        const norm = normalizeQuestion(q);
+                        const isCorrect = norm.result === "C";
+                        const isWrong = norm.result === "W";
+                        const tagBg = isCorrect ? "bg-green-50 text-green-700 border-green-100" : isWrong ? "bg-red-50 text-red-700 border-red-100" : "bg-slate-100 text-slate-500 border-slate-150";
+                        const marksStr = isCorrect ? "+4" : isWrong ? "-1" : "0";
+                        const marksColor = isCorrect ? "text-green-650" : isWrong ? "text-red-500" : "text-slate-400";
+                        
+                        return (
+                          <tr key={norm.q} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-slate-800">Q{norm.q}</td>
+                            <td className="py-3 px-4 font-semibold" style={{ color: SUBJ_COLOR[norm.subject] }}>{norm.subject}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-slate-800">{norm.chapter}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{norm.subtopic}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                norm.difficulty === "Easy" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                                norm.difficulty === "Hard" ? "bg-orange-50 text-orange-600 border border-orange-100" :
+                                "bg-slate-50 text-slate-500 border border-slate-100"
+                              }`}>
+                                {norm.difficulty}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${tagBg}`}>
+                                {norm.result === "C" ? "Correct ✓" : norm.result === "W" ? "Wrong ✗" : "Blank"}
+                              </span>
+                            </td>
+                            <td className={`py-3 px-4 text-right font-mono font-bold ${marksColor}`}>{marksStr}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
             </Card>
             <Card>
               <Label>Chapter breakdown — this test, weakest first</Label>
