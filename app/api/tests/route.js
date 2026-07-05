@@ -40,13 +40,14 @@ export async function POST(req) {
     id: crypto.randomUUID(),
     name,
     date: date || new Date().toISOString().slice(0, 10),
-    questions: questions.map(({ q, subject, topic, chapter, subtopic, result }) => ({
+    questions: questions.map(({ q, subject, topic, chapter, subtopic, result, difficulty }) => ({
       q,
       subject,
       ...(topic ? { topic } : {}),
       ...(chapter ? { chapter } : {}),
       ...(subtopic ? { subtopic } : {}),
       result,
+      difficulty: difficulty || "Medium",
     })),
   });
   return Response.json(test, { status: 201 });

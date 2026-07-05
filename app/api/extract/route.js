@@ -9,7 +9,7 @@ const SUBJECTS = ["Physics", "Chemistry", "Maths"];
 const PROMPT = `This is a scanned, hand-graded JEE weekend test (75 questions: Physics 1-25, Chemistry 26-50, Maths 51-75). Grader marks: +4 = correct, -1 = wrong, 0 or a circle "O" or no mark = unattempted.
 Output ONLY these lines, nothing else:
 Line 1: TEST|<short test name from header>|<date as YYYY-MM-DD if visible, else unknown>
-Then one line per question, all 75: <qno>|<Physics/Chemistry/Maths>|<chapter>|<subtopic>|<C/W/U>
+Then one line per question, all 75: <qno>|<Physics/Chemistry/Maths>|<chapter>|<subtopic>|<C/W/U>|<Easy/Medium/Hard>
 
 You MUST classify each question's topic into the standard taxonomy. Here is the allowed taxonomy:
 ${JSON.stringify(taxonomy, null, 2)}
@@ -19,6 +19,7 @@ For each question:
 2. Choose the correct <chapter> and <subtopic> from the taxonomy for that subject.
 3. If it doesn't fit, use "Other" for chapter and the actual topic name or "Other" for subtopic.
 4. Output the result marker: C (Correct = +4), W (Wrong = -1), U (Unattempted = 0/circle/no mark).
+5. Estimate the difficulty of the question based on standard JEE/EAMCET benchmarks: Easy, Medium, or Hard.
 Be extremely terse and precise.`;
 
 // Same parsing as the reference UI, moved server-side: tolerate partial or
@@ -45,18 +46,26 @@ function parseExtraction(text, fallbackName) {
     let chapter = "Other";
     let subtopic = "Other";
     let result = "U";
+    let difficulty = "Medium";
 
-    if (p.length >= 5) {
+    if (p.length >= 6) {
       chapter = p[2] || "Other";
       subtopic = p[3] || "Other";
       result = ["C", "W", "U"].includes(p[4]) ? p[4] : "U";
+      difficulty = ["Easy", "Medium", "Hard"].includes(p[5]) ? p[5] : "Medium";
+    } else if (p.length === 5) {
+      chapter = p[2] || "Other";
+      subtopic = p[3] || "Other";
+      result = ["C", "W", "U"].includes(p[4]) ? p[4] : "U";
+      difficulty = "Medium";
     } else {
       chapter = p[2] || "Other";
       subtopic = p[2] || "Other";
       result = ["C", "W", "U"].includes(p[3]) ? p[3] : "U";
+      difficulty = "Medium";
     }
 
-    questions.push({ q, subject, chapter, subtopic, result });
+    questions.push({ q, subject, chapter, subtopic, result, difficulty });
   }
   for (let i = 1; i <= 75; i++) {
     if (!questions.find((x) => x.q === i)) {
@@ -66,6 +75,7 @@ function parseExtraction(text, fallbackName) {
         chapter: "Other",
         subtopic: "Not read — set manually",
         result: "U",
+        difficulty: "Medium",
       });
     }
   }
