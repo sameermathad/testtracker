@@ -1,6 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
+import crypto from "crypto";
+import { listRevisionPlans, insertRevisionPlan } from "@/lib/db";
 
 export const runtime = "nodejs";
+
+export async function GET() {
+  try {
+    const plans = await listRevisionPlans();
+    return Response.json({ plans });
+  } catch (error) {
+    return Response.json({ error: `Failed to load revision plans: ${error.message}` }, { status: 500 });
+  }
+}
 
 export async function POST(req) {
   if (!process.env.GEMINI_API_KEY) {
@@ -40,7 +51,15 @@ Use bullet points and bold formatting where appropriate. Do not include any HTML
       model: "gemini-2.5-flash",
       contents: prompt,
     });
-    return Response.json({ plan: response.text });
+    
+    // Save to the database
+    const newPlan = await insertRevisionPlan({
+      id: crypto.randomUUID(),
+      date: new Date().toISOString(),
+      plan: response.text
+    });
+    
+    return Response.json(newPlan, { status: 201 });
   } catch (error) {
     return Response.json({ error: `Failed to generate revision plan: ${error.message}` }, { status: 500 });
   }

@@ -433,8 +433,9 @@ export default function TestTracker() {
   const [err, setErr] = useState("");
   const [draft, setDraft] = useState(null);
 
-  // AI Revision Plan state
-  const [revisionPlan, setRevisionPlan] = useState("");
+  // AI Revision Plan history state
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
   const [generatingPlan, setGeneratingPlan] = useState(false);
 
   useEffect(() => {
@@ -444,8 +445,18 @@ export default function TestTracker() {
         const data = await r.json();
         if (r.ok) setTests(data.tests || []);
         else setErr(data.error || "Could not load saved tests.");
+
+        // Fetch saved revision plans
+        const revResp = await fetch("/api/revision");
+        const revData = await revResp.json();
+        if (revResp.ok && revData.plans) {
+          setPlans(revData.plans);
+          if (revData.plans.length > 0) {
+            setSelectedPlanId(revData.plans[0].id);
+          }
+        }
       } catch (e) {
-        setErr("Could not load saved tests. Is the server running?");
+        setErr("Could not load saved data. Is the server running?");
       }
       setLoaded(true);
     })();
@@ -516,21 +527,6 @@ export default function TestTracker() {
     }
   }
 
-  // Load cached revision plan on startup
-  useEffect(() => {
-    if (tests.length > 0) {
-      const cached = localStorage.getItem("testtracker_revision_plan");
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed.testCount === tests.length) {
-            setRevisionPlan(parsed.plan);
-          }
-        } catch (e) {}
-      }
-    }
-  }, [tests]);
-
   // AI revision generator trigger
   async function generateRevisionPlan() {
     setGeneratingPlan(true); setErr("");
@@ -541,13 +537,10 @@ export default function TestTracker() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weakTopics: weakList.map(r => ({ subject: r.subject, chapter: r.chapter, acc: r.acc, score: r.score })) })
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "API error");
-      setRevisionPlan(data.plan);
-      localStorage.setItem("testtracker_revision_plan", JSON.stringify({
-        plan: data.plan,
-        testCount: tests.length
-      }));
+      const newPlan = await resp.json();
+      if (!resp.ok) throw new Error(newPlan.error || "API error");
+      setPlans((prev) => [newPlan, ...prev]);
+      setSelectedPlanId(newPlan.id);
     } catch (e) {
       setErr(`Failed to generate revision plan: ${e.message}`);
     }
@@ -1027,20 +1020,46 @@ export default function TestTracker() {
               <Card className="no-print">
                 <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100 mb-4">
                   <div>
-                    <Label>AI revision plan generator</Label>
-                    <p className="text-[10px] text-slate-500 leading-snug">Generate a customized weekly study strategy from Gemini based on your recurring weak chapters.</p>
+                    <Label>AI study plan history</Label>
+                    <p className="text-[10px] text-slate-500 leading-snug">Generate and view weekly study plans designed from actual weak chapters.</p>
                   </div>
                   <button onClick={generateRevisionPlan} disabled={generatingPlan}
                     className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-100 cursor-pointer disabled:opacity-50">
-                    {generatingPlan ? "Analyzing syllabus..." : "Generate Study Plan"}
+                    {generatingPlan ? "Analyzing syllabus..." : "Generate New Study Plan"}
                   </button>
                 </div>
-                {revisionPlan ? (
-                  <div className="bg-slate-50/50 border border-slate-150 rounded-xl p-4 mt-2">
-                    {renderMarkdown(revisionPlan)}
+                {plans.length > 0 ? (
+                  <div className="flex flex-col md:flex-row gap-4 mt-2">
+                    {/* sidebar: previous dates */}
+                    <div className="w-full md:w-1/4 flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-x-visible md:border-r border-slate-100 md:pr-4 min-w-[140px]">
+                      {plans.map((p) => {
+                        const dateStr = new Date(p.date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        });
+                        const isSelected = p.id === selectedPlanId;
+                        return (
+                          <button key={p.id} onClick={() => setSelectedPlanId(p.id)}
+                            className={`text-left px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                              isSelected ? "bg-slate-100 text-slate-800" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                            }`}>
+                            {dateStr}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* main area: selected plan markdown */}
+                    <div className="flex-1 bg-slate-50/50 border border-slate-150 rounded-xl p-4 min-h-[180px]">
+                      {(() => {
+                        const active = plans.find((p) => p.id === selectedPlanId);
+                        return active ? renderMarkdown(active.plan) : <p className="text-xs text-slate-400">Select a study plan to view details.</p>;
+                      })()}
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500 text-center py-4">Click the button above to generate dynamic recommendations for this week.</p>
+                  <p className="text-xs text-slate-500 text-center py-4">No study plans generated yet. Click the button above to generate recommendations for this week.</p>
                 )}
               </Card>
 
