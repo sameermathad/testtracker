@@ -2,7 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import taxonomy from "@/data/taxonomy.json";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Vercel Hobby caps serverless functions at 60s — a higher value fails the deploy or is ignored.
+export const maxDuration = 60;
 
 const SUBJECTS = ["Physics", "Chemistry", "Maths"];
 
@@ -130,6 +131,14 @@ export async function POST(req) {
           ],
         },
       ],
+      config: {
+        // Thinking is on by default for gemini-2.5-flash and roughly doubles
+        // latency; the output here is a mechanical transcription, so disable it
+        // to stay well inside Vercel's 60s function limit.
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 4096,
+        temperature: 0,
+      },
     });
     const text = response.text;
     const fallbackName = (file.name || "Test").replace(/\.pdf$/i, "");

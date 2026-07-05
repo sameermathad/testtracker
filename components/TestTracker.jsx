@@ -98,45 +98,70 @@ const P1 = [
   ["1|Physics|Field & motion of charges|C","2|Physics|Flux & Gauss law|C","3|Physics|Electric dipole|C","4|Physics|Charging & induction|C","5|Physics|Electric dipole|U","6|Physics|Flux & Gauss law|C","7|Physics|Field & motion of charges|U","8|Physics|Flux & Gauss law|W","9|Physics|Coulomb law & forces|C","10|Physics|Coulomb law & forces|C","11|Physics|Flux & Gauss law|U","12|Physics|Charging & induction|C","13|Physics|Flux & Gauss law|U","14|Physics|Field & motion of charges|C","15|Physics|Electric dipole|U","16|Physics|Flux & Gauss law|C","17|Physics|Field & motion of charges|C","18|Physics|Electric dipole|U","19|Physics|Field & motion of charges|U","20|Physics|Flux & Gauss law|C","21|Physics|Field & motion of charges|U","22|Physics|Flux & Gauss law|U","23|Physics|Electric dipole|U","24|Physics|Coulomb law & forces|U","25|Physics|Field & motion of charges|U"],
   ["26|Chemistry|BP elevation|U","27|Chemistry|Henry law|W","28|Chemistry|Raoult law & VP|C","29|Chemistry|Raoult law & VP|U","30|Chemistry|Deviations & azeotropes|U","31|Chemistry|Henry law|C","32|Chemistry|van't Hoff factor|C","33|Chemistry|Concentration terms|U","34|Chemistry|Concentration terms|C","35|Chemistry|Solutions basics|C","36|Chemistry|Raoult law & VP|U","37|Chemistry|Osmosis|C","38|Chemistry|FP depression|C","39|Chemistry|BP elevation|C","40|Chemistry|FP depression|C","41|Chemistry|Henry law|C","42|Chemistry|Deviations & azeotropes|C","43|Chemistry|Raoult law & VP|U","44|Chemistry|Osmosis|U","45|Chemistry|Concentration terms|C","46|Chemistry|Henry law|U","47|Chemistry|Osmosis|U","48|Chemistry|Raoult law & VP|U","49|Chemistry|Raoult law & VP|U","50|Chemistry|FP depression|U"],
   ["51|Maths|Roots & coefficients|C","52|Maths|Trig-linked quadratics|U","53|Maths|Location of roots|C","54|Maths|Nature of roots|U","55|Maths|Roots & coefficients|C","56|Maths|Inequalities & range|U","57|Maths|Inequalities & range|W","58|Maths|Nature of roots|C","59|Maths|Reducible to quadratic|U","60|Maths|Roots & coefficients|C","61|Maths|Roots & coefficients|C","62|Maths|Common roots|U","63|Maths|Inequalities & range|U","64|Maths|Reducible to quadratic|U","65|Maths|Inequalities & range|U","66|Maths|Common roots|U","67|Maths|Trig-linked quadratics|U","68|Maths|Nature of roots|W","69|Maths|Location of roots|U","70|Maths|Nature of roots|W","71|Maths|Inequalities & range|U","72|Maths|Roots & coefficients|U","73|Maths|Roots & coefficients|U","74|Maths|Inequalities & range|U","75|Maths|Roots & coefficients|U"],
-].flat().map((s) => { const [q, subject, topic, result] = s.split("|"); return { q: +q, subject, topic, result, difficulty: q % 3 === 0 ? "Easy" : q % 3 === 1 ? "Medium" : "Hard" }; });
+// No difficulty here: it was never assessed for the seed paper, so leave it to
+// the "Medium" default rather than inventing a distribution.
+].flat().map((s) => { const [q, subject, topic, result] = s.split("|"); return { q: +q, subject, topic, result }; });
 
 const SEED = { name: "LJ CT02 — Electrostatics / Solutions / Quadratics", date: "2026-06-15", questions: P1 };
 
 // ---------- Helpers ----------
+// Legacy questions carry a free-text `topic` instead of chapter/subtopic. Exact
+// substring matching missed most of them (e.g. "Flux & Gauss law" vs the
+// taxonomy's "Electric flux & Gauss law"), dumping them into "Other" where the
+// heatmap ignores them — so match on word overlap instead of exact strings.
+const STOP_WORDS = new Set(["of", "in", "and", "the", "a", "an", "to", "for"]);
+function topicWords(str) {
+  return str
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 1 && !STOP_WORDS.has(w))
+    .map((w) => (w.endsWith("s") ? w.slice(0, -1) : w)); // crude plural fold
+}
+
+function matchScore(topic, candidate) {
+  const t = topicWords(topic);
+  const c = new Set(topicWords(candidate));
+  if (!t.length || !c.size) return 0;
+  const overlap = t.filter((w) => c.has(w)).length;
+  return overlap / t.length; // fraction of the topic's words found in the candidate
+}
+
+const normalizeCache = new Map();
 function normalizeQuestion(q) {
   if (!q) return q;
   const difficulty = q.difficulty || "Medium";
   if (q.chapter && q.subtopic) return { ...q, difficulty };
 
   const topic = q.topic || "Other";
-  let foundChapter = "Other";
-  let foundSubtopic = topic;
-
   const subject = q.subject || "Physics";
-  const subjTaxonomy = taxonomy[subject];
+  const cacheKey = subject + "::" + topic;
 
-  if (subjTaxonomy) {
-    outerLoop:
-    for (const [chap, subtopics] of Object.entries(subjTaxonomy)) {
-      if (subtopics.some((s) => s.toLowerCase() === topic.toLowerCase() || topic.toLowerCase().includes(s.toLowerCase()))) {
-        foundChapter = chap;
-        foundSubtopic = subtopics.find((s) => s.toLowerCase() === topic.toLowerCase() || topic.toLowerCase().includes(s.toLowerCase())) || topic;
-        break outerLoop;
+  let found = normalizeCache.get(cacheKey);
+  if (!found) {
+    found = { chapter: "Other", subtopic: topic };
+    const subjTaxonomy = taxonomy[subject];
+    if (subjTaxonomy) {
+      let best = 0;
+      for (const [chap, subtopics] of Object.entries(subjTaxonomy)) {
+        for (const s of subtopics) {
+          const score = matchScore(topic, s);
+          if (score > best) {
+            best = score;
+            found = { chapter: chap, subtopic: s };
+          }
+        }
+        const chapScore = matchScore(topic, chap) * 0.9; // prefer subtopic hits over chapter-name hits
+        if (chapScore > best) {
+          best = chapScore;
+          found = { chapter: chap, subtopic: subtopics[0] || "General" };
+        }
       }
-      if (chap.toLowerCase() === topic.toLowerCase() || topic.toLowerCase().includes(chap.toLowerCase())) {
-        foundChapter = chap;
-        foundSubtopic = subtopics[0] || "General";
-        break outerLoop;
-      }
+      if (best < 0.5) found = { chapter: "Other", subtopic: topic };
     }
+    normalizeCache.set(cacheKey, found);
   }
 
-  return {
-    ...q,
-    chapter: foundChapter,
-    subtopic: foundSubtopic,
-    difficulty,
-  };
+  return { ...q, chapter: found.chapter, subtopic: found.subtopic, difficulty };
 }
 
 function subjectStats(questions, subject) {
@@ -284,10 +309,11 @@ function getRecurringWeakTopics(tests) {
     
     Object.entries(chapMap).forEach(([key, stats]) => {
       const att = stats.c + stats.w;
-      const acc = att ? stats.c / att : 0;
       map[key] = map[key] || { subject: key.split("::")[0], chapter: key.split("::")[1], redCount: 0, appearances: 0 };
       map[key].appearances++;
-      if (acc < 0.5) {
+      // Only attempted-and-inaccurate counts as "red" — a chapter the student
+      // skipped entirely is a coverage gap, not a demonstrated weakness.
+      if (att > 0 && stats.c / att < 0.5) {
         map[key].redCount++;
       }
     });
@@ -371,7 +397,7 @@ const CustomTooltip = ({ active, payload }) => {
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.stroke || p.color }} />
                 {p.name}:
               </span>
-              <span className="font-bold text-slate-800">{Math.abs(p.value)} marks</span>
+              <span className="font-bold text-slate-800">{p.value} marks</span>
             </div>
           ))}
         </div>
@@ -468,16 +494,35 @@ export default function TestTracker() {
   }, []);
 
   async function extractPdf(file) {
-    setBusy(true); setErr("");
+    setErr("");
+    // Vercel rejects request bodies over ~4.5 MB before they reach our route,
+    // so catch oversized scans up front with a useful message.
+    const isLocal = typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    if (!isLocal && file.size > 4.4 * 1024 * 1024) {
+      setErr(`This PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — the deployed site can't accept uploads over 4.4 MB (Vercel limit). Rescan at a lower resolution or compress the PDF first.`);
+      return;
+    }
+    setBusy(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const resp = await fetch("/api/extract", { method: "POST", body: fd });
-      const data = await resp.json();
+      let data;
+      try {
+        data = await resp.json();
+      } catch {
+        // Platform-level failures (payload too large, gateway timeout) return
+        // HTML/plain text, not our JSON shape.
+        throw new Error(
+          resp.status === 413 ? "The PDF is too large for the server to accept."
+          : resp.status === 504 ? "The extraction timed out — try a shorter or clearer scan."
+          : `Server error (HTTP ${resp.status})`
+        );
+      }
       if (!resp.ok) throw new Error(data.error || "API error");
       setDraft(data);
     } catch (e) {
-      setErr(`Extraction failed: ${e.message}. You can retry, or check the PDF is a clear scan.`);
+      setErr(`Extraction failed: ${e.message} You can retry, or check the PDF is a clear scan.`);
     }
     setBusy(false);
   }
@@ -631,7 +676,7 @@ export default function TestTracker() {
   })() : null;
 
   return (
-    <div className="bg-slate-50 min-h-screen text-slate-800 font-sans selection:bg-indigo-150 selection:text-indigo-900 pb-12">
+    <div className="bg-slate-50 min-h-screen text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-12">
       {/* print styles */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
@@ -672,11 +717,11 @@ export default function TestTracker() {
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
               {[["overview", "Overview"], ["upload", "Upload Paper"]].map(([v, l]) => (
                 <button key={v} onClick={() => setView(v)}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${view === v ? "bg-white text-slate-850 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{l}</button>
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${view === v ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{l}</button>
               ))}
             </div>
             {tests.length > 0 && view === "overview" && (
-              <button onClick={() => window.print()} className="px-3.5 py-2 border border-slate-350 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer">
+              <button onClick={() => window.print()} className="px-3.5 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer">
                 Export PDF
               </button>
             )}
@@ -707,7 +752,7 @@ export default function TestTracker() {
               </div>
             </div>
             {busy && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-150 rounded-xl text-xs text-blue-700 flex items-center gap-2">
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 flex items-center gap-2">
                 <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                 Reading and classifying PDF... this can take 20–40 seconds for a full paper.
               </div>
@@ -782,7 +827,7 @@ export default function TestTracker() {
                   <div><Label>Total</Label><Big>{subjectStats(draft.questions).marks} / 300</Big></div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setDraft(null)} className="px-4 py-2 border border-slate-350 hover:bg-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer">Discard</button>
+                  <button onClick={() => setDraft(null)} className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer">Discard</button>
                   <button onClick={saveDraft} className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-500 text-white rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer">Save test</button>
                 </div>
               </div>
@@ -794,7 +839,7 @@ export default function TestTracker() {
         {view === "overview" && (
           tests.length === 0 ? (
             <Card className="text-center py-16 max-w-xl mx-auto no-print">
-              <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-250 flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto mb-4">
                 <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
@@ -835,7 +880,7 @@ export default function TestTracker() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: latestDiagnosis.type === "speed" ? C.amber : C.red }} />
                     Latest Diagnostic Recommendation
                   </h4>
-                  <p className="text-xs text-slate-650 mt-1.5 leading-relaxed">{latestDiagnosis.desc}</p>
+                  <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{latestDiagnosis.desc}</p>
                 </Card>
               )}
 
@@ -931,15 +976,15 @@ export default function TestTracker() {
                     let label = "Untested";
                     
                     if (item.status === "weak") {
-                      bg = "bg-red-50 text-red-700 border-red-150";
+                      bg = "bg-red-50 text-red-700 border-red-100";
                       dot = "bg-red-500 animate-pulse";
                       label = `Weak (${Math.round(item.acc * 100)}% accuracy)`;
                     } else if (item.status === "developing") {
-                      bg = "bg-amber-50/70 text-amber-700 border-amber-150";
+                      bg = "bg-amber-50/70 text-amber-700 border-amber-100";
                       dot = "bg-amber-500";
                       label = `Developing (${Math.round(item.acc * 100)}% accuracy)`;
                     } else if (item.status === "strong") {
-                      bg = "bg-emerald-50 text-emerald-700 border-emerald-150";
+                      bg = "bg-emerald-50 text-emerald-700 border-emerald-100";
                       dot = "bg-emerald-500";
                       label = `Strong (${Math.round(item.acc * 100)}% accuracy)`;
                     }
@@ -961,7 +1006,7 @@ export default function TestTracker() {
                   {/* MCQ vs Numerical analysis */}
                   <Card>
                     <Label>Latest test: Section-Type Analysis</Label>
-                    <p className="text-[10px] text-slate-500 mb-4 leading-snug">Compare MCQ (+4 / -1) vs Integer type (numerical value, no negatives) performance.</p>
+                    <p className="text-[10px] text-slate-500 mb-4 leading-snug">Compare MCQ vs Numerical/Integer-type performance (both scored +4 / −1).</p>
                     <div className="flex flex-col gap-4">
                       {["mcq", "int"].map((key) => {
                         const isMcq = key === "mcq";
@@ -1056,7 +1101,7 @@ export default function TestTracker() {
                       })}
                     </div>
                     {/* main area: selected plan markdown */}
-                    <div className="flex-1 bg-slate-50/50 border border-slate-150 rounded-xl p-4 min-h-[180px]">
+                    <div className="flex-1 bg-slate-50/50 border border-slate-100 rounded-xl p-4 min-h-[180px]">
                       {(() => {
                         const active = plans.find((p) => p.id === selectedPlanId);
                         return active ? renderMarkdown(active.plan) : <p className="text-xs text-slate-400">Select a study plan to view details.</p>;
@@ -1153,7 +1198,7 @@ export default function TestTracker() {
                             </div>
                           </div>
                           <div className="flex gap-2 no-print">
-                            <button onClick={() => setView("test:" + t.id)} className="px-3.5 py-1.5 rounded-lg border border-slate-250 bg-slate-50 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer">Open</button>
+                            <button onClick={() => setView("test:" + t.id)} className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer">Open</button>
                             <button onClick={() => { if (confirm("Delete this test?")) removeTest(t.id); }} className="px-3.5 py-1.5 rounded-lg border border-red-100 bg-red-50 text-xs font-semibold text-red-500 hover:bg-red-100/50 transition-all cursor-pointer">Delete</button>
                           </div>
                         </div>
@@ -1174,7 +1219,7 @@ export default function TestTracker() {
                 <div className="font-bold text-xl tracking-tight text-slate-900" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{current.name}</div>
                 <div className="text-xs text-slate-500 mt-1 font-medium">{current.date}</div>
               </div>
-              <button onClick={() => setView("overview")} className="px-3.5 py-2 rounded-lg border border-slate-250 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all cursor-pointer no-print">← Back to overview</button>
+              <button onClick={() => setView("overview")} className="px-3.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all cursor-pointer no-print">← Back to overview</button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {SUBJECTS.map((s) => { const st = subjectStats(current.questions, s); return (
@@ -1197,19 +1242,19 @@ export default function TestTracker() {
                   <p className="text-[10px] text-slate-500 leading-snug">Review individual question details, topics, and performance indicators.</p>
                 </div>
                 <div className="flex gap-2 flex-wrap text-xs no-print">
-                  <select value={qFilterSubj} onChange={(e) => setQFilterSubj(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                  <select value={qFilterSubj} onChange={(e) => setQFilterSubj(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 bg-white">
                     <option value="All">All Subjects</option>
                     <option value="Physics">Physics</option>
                     <option value="Chemistry">Chemistry</option>
                     <option value="Maths">Maths</option>
                   </select>
-                  <select value={qFilterStatus} onChange={(e) => setQFilterStatus(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                  <select value={qFilterStatus} onChange={(e) => setQFilterStatus(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 bg-white">
                     <option value="All">All Statuses</option>
                     <option value="C">Correct (✓)</option>
                     <option value="W">Wrong (✗)</option>
                     <option value="U">Unattempted (Blank)</option>
                   </select>
-                  <select value={qFilterDiff} onChange={(e) => setQFilterDiff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-650 bg-white">
+                  <select value={qFilterDiff} onChange={(e) => setQFilterDiff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 bg-white">
                     <option value="All">All Difficulties</option>
                     <option value="Easy">Easy</option>
                     <option value="Medium">Medium</option>
@@ -1217,7 +1262,7 @@ export default function TestTracker() {
                   </select>
                 </div>
               </div>
-              <div className="overflow-x-auto max-h-[360px] overflow-y-auto mt-2 border border-slate-150 rounded-xl divide-y divide-slate-100">
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto mt-2 border border-slate-100 rounded-xl divide-y divide-slate-100">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 z-10">
                     <tr className="font-semibold text-slate-500">
@@ -1229,7 +1274,7 @@ export default function TestTracker() {
                       <th className="py-2.5 px-4 w-16 text-right">Marks</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white text-slate-650">
+                  <tbody className="divide-y divide-slate-100 bg-white text-slate-600">
                     {current.questions
                       .filter((q) => {
                         const norm = normalizeQuestion(q);
@@ -1242,9 +1287,9 @@ export default function TestTracker() {
                         const norm = normalizeQuestion(q);
                         const isCorrect = norm.result === "C";
                         const isWrong = norm.result === "W";
-                        const tagBg = isCorrect ? "bg-green-50 text-green-700 border-green-100" : isWrong ? "bg-red-50 text-red-700 border-red-100" : "bg-slate-100 text-slate-500 border-slate-150";
+                        const tagBg = isCorrect ? "bg-green-50 text-green-700 border-green-100" : isWrong ? "bg-red-50 text-red-700 border-red-100" : "bg-slate-100 text-slate-500 border-slate-100";
                         const marksStr = isCorrect ? "+4" : isWrong ? "-1" : "0";
-                        const marksColor = isCorrect ? "text-green-650" : isWrong ? "text-red-500" : "text-slate-400";
+                        const marksColor = isCorrect ? "text-green-600" : isWrong ? "text-red-500" : "text-slate-400";
                         
                         return (
                           <tr key={norm.q} className="hover:bg-slate-50/50 transition-colors">
@@ -1279,7 +1324,7 @@ export default function TestTracker() {
             <Card>
               <Label>Chapter breakdown — this test, weakest first</Label>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full border-collapse text-left text-sm text-slate-650">
+                <table className="w-full border-collapse text-left text-sm text-slate-600">
                   <thead>
                     <tr className="border-b border-slate-200 text-xs font-semibold tracking-wider text-slate-500 uppercase">
                       <th className="py-2.5 px-4">Chapter</th>
