@@ -89,31 +89,31 @@ function parseExtraction(text, fallbackName) {
 }
 
 export async function POST(req) {
-  if (!process.env.GEMINI_API_KEY) {
-    return Response.json(
-      { error: "GEMINI_API_KEY is not set. Add it to .env.local and restart the dev server." },
-      { status: 500 }
-    );
-  }
-
-  let file;
   try {
-    const form = await req.formData();
-    file = form.get("file");
-  } catch {
-    return Response.json({ error: "Expected multipart form data with a 'file' field." }, { status: 400 });
-  }
-  if (!file || typeof file.arrayBuffer !== "function") {
-    return Response.json({ error: "No PDF file uploaded." }, { status: 400 });
-  }
-  if (file.size > 30 * 1024 * 1024) {
-    return Response.json({ error: "PDF is larger than 30 MB — rescan at a lower resolution." }, { status: 413 });
-  }
+    if (!process.env.GEMINI_API_KEY) {
+      return Response.json(
+        { error: "GEMINI_API_KEY is not set. Add it to environment variables." },
+        { status: 500 }
+      );
+    }
 
-  const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    let file;
+    try {
+      const form = await req.formData();
+      file = form.get("file");
+    } catch {
+      return Response.json({ error: "Expected multipart form data with a 'file' field." }, { status: 400 });
+    }
+    if (!file || typeof file.arrayBuffer !== "function") {
+      return Response.json({ error: "No PDF file uploaded." }, { status: 400 });
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      return Response.json({ error: "PDF is larger than 30 MB — rescan at a lower resolution." }, { status: 413 });
+    }
 
-  try {
+    const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
@@ -135,8 +135,9 @@ export async function POST(req) {
     const fallbackName = (file.name || "Test").replace(/\.pdf$/i, "");
     return Response.json(parseExtraction(text, fallbackName));
   } catch (error) {
+    console.error("PDF Extraction error:", error);
     if (error.message && (error.message.includes("API key") || error.message.includes("API_KEY"))) {
-      return Response.json({ error: "Invalid Gemini API key — check GEMINI_API_KEY in .env.local." }, { status: 500 });
+      return Response.json({ error: "Invalid Gemini API key — check your GEMINI_API_KEY configuration." }, { status: 500 });
     }
     if (error.message && (error.message.includes("429") || error.message.includes("quota"))) {
       return Response.json({ error: "Rate limited by the Gemini API — wait a minute and retry." }, { status: 429 });
