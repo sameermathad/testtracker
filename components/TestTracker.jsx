@@ -303,6 +303,33 @@ export default function TestTracker() {
               </p>
             </Card>
             <Card><OMRGrid questions={draft.questions} onFlip={flipDraft} /></Card>
+            <Card style={{ maxHeight: 300, overflowY: "auto" }}>
+              <Label>Classification Preview</Label>
+              <p style={{ fontSize: 12, color: C.inkSoft, marginBottom: 8 }}>Verify how each question was classified before saving.</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {SUBJECTS.map((s) => {
+                  const qs = draft.questions.filter((q) => q.subject === s);
+                  return (
+                    <div key={s} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: 8, background: C.paper }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: SUBJ_COLOR[s], borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>{s}</div>
+                      <div style={{ maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
+                        {qs.map((q) => {
+                          const normQ = normalizeQuestion(q);
+                          return (
+                            <div key={normQ.q} style={{ fontSize: 11, display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px dashed ${C.line}` }}>
+                              <span style={{ fontWeight: 600 }}>Q{normQ.q}:</span>
+                              <span style={{ textAlign: "right", color: C.inkSoft }}>
+                                {normQ.chapter} &gt; {normQ.subtopic}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
             <Card>
               <div className="flex flex-wrap gap-4 items-center justify-between">
                 <div className="flex gap-6">

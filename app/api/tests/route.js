@@ -29,7 +29,7 @@ export async function POST(req) {
     if (
       !Number.isInteger(q.q) ||
       !SUBJECTS.has(q.subject) ||
-      typeof q.topic !== "string" ||
+      (typeof q.topic !== "string" && typeof q.chapter !== "string") ||
       !RESULTS.has(q.result)
     ) {
       return Response.json({ error: `Malformed question entry: ${JSON.stringify(q)}` }, { status: 400 });
@@ -40,7 +40,14 @@ export async function POST(req) {
     id: crypto.randomUUID(),
     name,
     date: date || new Date().toISOString().slice(0, 10),
-    questions: questions.map(({ q, subject, topic, result }) => ({ q, subject, topic, result })),
+    questions: questions.map(({ q, subject, topic, chapter, subtopic, result }) => ({
+      q,
+      subject,
+      ...(topic ? { topic } : {}),
+      ...(chapter ? { chapter } : {}),
+      ...(subtopic ? { subtopic } : {}),
+      result,
+    })),
   });
   return Response.json(test, { status: 201 });
 }
