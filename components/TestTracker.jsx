@@ -516,6 +516,21 @@ export default function TestTracker() {
     }
   }
 
+  // Load cached revision plan on startup
+  useEffect(() => {
+    if (tests.length > 0) {
+      const cached = localStorage.getItem("testtracker_revision_plan");
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed.testCount === tests.length) {
+            setRevisionPlan(parsed.plan);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [tests]);
+
   // AI revision generator trigger
   async function generateRevisionPlan() {
     setGeneratingPlan(true); setErr("");
@@ -529,6 +544,10 @@ export default function TestTracker() {
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "API error");
       setRevisionPlan(data.plan);
+      localStorage.setItem("testtracker_revision_plan", JSON.stringify({
+        plan: data.plan,
+        testCount: tests.length
+      }));
     } catch (e) {
       setErr(`Failed to generate revision plan: ${e.message}`);
     }
